@@ -1,9 +1,11 @@
 const Promise = require('bluebird');
 const _ = require('lodash');
 const models = require('../../models');
-const routing = require('../../../frontend/services/routing');
+const frontendRouting = require('../../../frontend/services/routing');
+const frontendSettings = require('../../../frontend/services/settings');
 const {i18n} = require('../../lib/common');
 const {NoPermissionError, NotFoundError} = require('@tryghost/errors');
+const settingsService = require('../../services/settings');
 const settingsCache = require('../../services/settings/cache');
 
 module.exports = {
@@ -22,12 +24,14 @@ module.exports = {
                 }));
             }
 
-            // CASE: omit core settings unless internal request
             if (!frame.options.context.internal) {
+                // CASE: omit core settings unless internal request
                 settings = _.filter(settings, (setting) => {
                     const isCore = setting.group === 'core';
                     return !isCore;
                 });
+                // CASE: omit secret settings unless internal request
+                settings = settings.map(settingsService.hideValueIfSecret);
             }
 
             return settings;
@@ -65,6 +69,8 @@ module.exports = {
                     message: i18n.t('errors.api.settings.accessCoreSettingFromExtReq')
                 }));
             }
+
+            setting = settingsService.hideValueIfSecret(setting);
 
             return {
                 [frame.options.key]: setting
@@ -106,7 +112,10 @@ module.exports = {
             }
 
             frame.data.settings = _.reject(frame.data.settings, (setting) => {
-                return setting.key === 'type';
+                return setting.key === 'type'
+                    // Remove obfuscated settings
+                    || (setting.value === settingsService.obfuscatedSetting
+                        && settingsService.isSecretSetting(setting));
             });
 
             const errors = [];
@@ -143,8 +152,10 @@ module.exports = {
         permissions: {
             method: 'edit'
         },
-        query(frame) {
-            return routing.settings.setFromFilePath(frame.file.path);
+        async query(frame) {
+            await frontendRouting.settings.setFromFilePath(frame.file.path);
+            const getRoutesHash = () => frontendSettings.getCurrentHash('routes');
+            await settingsService.syncRoutesHash(getRoutesHash);
         }
     },
 
@@ -162,7 +173,7 @@ module.exports = {
             method: 'browse'
         },
         query() {
-            return routing.settings.get();
+            return frontendRouting.settings.get();
         }
     }
 };

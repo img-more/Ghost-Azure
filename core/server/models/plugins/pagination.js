@@ -7,7 +7,6 @@ const {i18n} = require('../../lib/common');
 const errors = require('@tryghost/errors');
 let defaults;
 let paginationUtils;
-let pagination;
 
 /**
  * ### Default pagination values
@@ -90,6 +89,27 @@ paginationUtils = {
         }
 
         return pagination;
+    },
+
+    /**
+     *
+     * @param {Bookshelf.Model} model instance of Bookshelf model
+     * @param {string} propertyName property to be inspected and included in the relation
+     */
+    handleRelation: function handleRelation(model, propertyName) {
+        const tableName = _.result(model.constructor.prototype, 'tableName');
+
+        const targetTable = propertyName.includes('.') && propertyName.split('.')[0];
+
+        if (targetTable && targetTable !== tableName) {
+            if (!model.eagerLoad) {
+                model.eagerLoad = [];
+            }
+
+            if (!model.eagerLoad.includes(targetTable)) {
+                model.eagerLoad.push(targetTable);
+            }
+        }
     }
 };
 
@@ -126,7 +146,7 @@ paginationUtils = {
  * Extends `bookshelf.Model` with `fetchPage`
  * @param {Bookshelf} bookshelf \- the instance to plug into
  */
-pagination = function pagination(bookshelf) {
+const pagination = function pagination(bookshelf) {
     // Extend updates the first object passed to it, no need for an assignment
     _.extend(bookshelf.Model.prototype, {
         /**
@@ -182,13 +202,21 @@ pagination = function pagination(bookshelf) {
                         if (property === 'count.posts') {
                             self.query('orderBy', 'count__posts', direction);
                         } else {
-                            self.query('orderBy', tableName + '.' + property, direction);
+                            self.query('orderBy', property, direction);
+
+                            paginationUtils.handleRelation(self, property);
                         }
                     });
-                } else if (options.orderRaw) {
-                    self.query(function (qb) {
+                }
+
+                if (options.orderRaw) {
+                    self.query((qb) => {
                         qb.orderByRaw(options.orderRaw);
                     });
+                }
+
+                if (!_.isEmpty(options.eagerLoad)) {
+                    options.eagerLoad.forEach(property => paginationUtils.handleRelation(self, property));
                 }
 
                 if (options.groups && !_.isEmpty(options.groups)) {
@@ -199,6 +227,7 @@ pagination = function pagination(bookshelf) {
 
                 // Setup the promise to do a fetch on our collection, running the specified query
                 // @TODO: ensure option handling is done using an explicit pick elsewhere
+
                 return self.fetchAll(_.omit(options, ['page', 'limit']))
                     .then(function (fetchResult) {
                         if (options.limit === 'all') {

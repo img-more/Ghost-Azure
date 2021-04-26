@@ -192,6 +192,7 @@ class MembersConfigProvider {
                 id: this._settingsCache.get('members_stripe_webhook_id'),
                 secret: this._settingsCache.get('members_stripe_webhook_secret')
             },
+            enablePromoCodes: this._config.get('enableStripePromoCodes'),
             product: {
                 name: this._settingsCache.get('stripe_product_name')
             },
@@ -236,12 +237,13 @@ class MembersConfigProvider {
         };
     }
 
-    getSigninURL(token, type) {
+    getSigninURL(token, type, requestSrc) {
         const siteUrl = this._urlUtils.getSiteUrl();
         const signinURL = new URL(siteUrl);
         signinURL.pathname = path.join(signinURL.pathname, '/members/');
+        const actionParam = requestSrc === 'portal' ? 'portal-action' : 'action';
         signinURL.searchParams.set('token', token);
-        signinURL.searchParams.set('action', type);
+        signinURL.searchParams.set(actionParam, type);
         return signinURL.href;
     }
 }
